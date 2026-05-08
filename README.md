@@ -1,6 +1,6 @@
 # DisplayFocus Memory
 
-A tiny macOS menu-bar utility that approximates per-monitor focus.
+A tiny macOS menu-bar app that remembers window focus per monitor.
 
 macOS has one global focused window. DisplayFocus Memory remembers the last normal focused window for each physical display, then restores that window when the pointer crosses into that display.
 
