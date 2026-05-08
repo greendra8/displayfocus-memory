@@ -12,6 +12,8 @@ final class FocusMemory {
     private var currentMouseDisplayID: CGDirectDisplayID?
     private var observers: [pid_t: AXObserver] = [:]
     private var observedApplicationPIDs: Set<pid_t> = []
+    private var isDraggingWindow = false
+    private var suppressRestoreUntil = Date.distantPast
     private var isRunning = false
 
     init(settings: SettingsStore, status: @escaping (String) -> Void) {
@@ -84,9 +86,9 @@ final class FocusMemory {
         ) { [weak self] event in
             switch event.type {
             case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
-                self?.handleMouseMoved()
+                self?.handleMouseMoved(isDrag: event.type != .mouseMoved)
             case .leftMouseUp, .rightMouseUp, .otherMouseUp:
-                self?.rememberAfterUserMouseAction()
+                self?.handleMouseUp()
             default:
                 break
             }
@@ -113,8 +115,8 @@ final class FocusMemory {
         }
     }
 
-    private func rememberAfterUserMouseAction() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+    private func rememberAfterUserMouseAction(delay: TimeInterval = 0.08) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             self?.rememberCurrentFocusedWindow()
         }
     }
@@ -171,11 +173,12 @@ final class FocusMemory {
             return
         }
 
+        removeDuplicateMemory(for: remembered)
         rememberedWindowByDisplay[display.id] = remembered
         status("Remembered \(remembered.appName) for display \(display.id)")
     }
 
-    private func handleMouseMoved() {
+    private func handleMouseMoved(isDrag: Bool) {
         guard settings.isEnabled, AccessibilityPermission.isTrusted() else {
             return
         }
@@ -185,12 +188,37 @@ final class FocusMemory {
             return
         }
 
+        if isDrag {
+            isDraggingWindow = true
+            focusTimer?.invalidate()
+            focusTimer = nil
+            currentMouseDisplayID = display.id
+            return
+        }
+
         guard display.id != currentMouseDisplayID else {
             return
         }
 
         currentMouseDisplayID = display.id
+
+        guard Date() >= suppressRestoreUntil else {
+            return
+        }
+
         scheduleRestore(for: display)
+    }
+
+    private func handleMouseUp() {
+        if isDraggingWindow {
+            isDraggingWindow = false
+            suppressRestoreUntil = Date().addingTimeInterval(0.4)
+            currentMouseDisplayID = DisplayResolver.display(containing: currentMouseLocation())?.id
+            rememberAfterUserMouseAction(delay: 0.15)
+            return
+        }
+
+        rememberAfterUserMouseAction()
     }
 
     private func scheduleRestore(for display: PhysicalDisplay) {
@@ -225,7 +253,26 @@ final class FocusMemory {
         }
 
         AXWindowInspector.focusAndRaise(remembered)
+        raiseRememberedWindowsOnOtherDisplays(except: display.id)
         status("Restored \(remembered.appName) on display \(display.id)")
+    }
+
+    private func raiseRememberedWindowsOnOtherDisplays(except displayID: CGDirectDisplayID) {
+        for (otherDisplayID, remembered) in rememberedWindowByDisplay where otherDisplayID != displayID {
+            guard AXWindowInspector.isRestorable(remembered, ignoredAppNames: settings.ignoredAppNames),
+                  let frame = AXWindowInspector.frame(of: remembered.window),
+                  DisplayResolver.displayWithLargestOverlap(for: frame)?.id == otherDisplayID else {
+                continue
+            }
+
+            AXWindowInspector.raiseWithoutFocusing(remembered)
+        }
+    }
+
+    private func removeDuplicateMemory(for remembered: RememberedWindow) {
+        rememberedWindowByDisplay = rememberedWindowByDisplay.filter { _, existing in
+            !AXWindowInspector.isSameWindow(existing, remembered)
+        }
     }
 
     fileprivate func focusedWindowChanged() {

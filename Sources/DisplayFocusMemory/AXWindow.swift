@@ -105,6 +105,14 @@ enum AXWindowInspector {
         AXUIElementPerformAction(remembered.window, kAXRaiseAction as CFString)
     }
 
+    static func raiseWithoutFocusing(_ remembered: RememberedWindow) {
+        AXUIElementPerformAction(remembered.window, kAXRaiseAction as CFString)
+    }
+
+    static func isSameWindow(_ lhs: RememberedWindow, _ rhs: RememberedWindow) -> Bool {
+        CFEqual(lhs.window, rhs.window)
+    }
+
     private static func stringAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
         var value: AnyObject?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
