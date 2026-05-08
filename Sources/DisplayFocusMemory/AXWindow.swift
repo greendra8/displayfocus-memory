@@ -95,22 +95,63 @@ enum AXWindowInspector {
         return true
     }
 
-    static func focusAndRaise(_ remembered: RememberedWindow) {
-        let app = NSRunningApplication(processIdentifier: remembered.pid)
-        app?.activate(options: [.activateIgnoringOtherApps])
+    static func focusAndRaise(_ remembered: RememberedWindow, snapshotPIDs: Set<pid_t> = []) {
+        DebugLog.write("focusAndRaise begin frontmost=\(frontmostSummary()) \(debugSummary(remembered))")
 
-        AXUIElementSetAttributeValue(remembered.app, kAXFocusedWindowAttribute as CFString, remembered.window)
-        AXUIElementSetAttributeValue(remembered.window, kAXMainAttribute as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(remembered.window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        AXUIElementPerformAction(remembered.window, kAXRaiseAction as CFString)
+        let focusedWindowResult = AXUIElementSetAttributeValue(remembered.app, kAXFocusedWindowAttribute as CFString, remembered.window)
+        DebugLog.write("focusAndRaise set focusedWindow result=\(focusedWindowResult) frontmost=\(frontmostSummary()) \(debugSummary(remembered))")
+        snapshotWindowOrder(label: "after set focusedWindow \(remembered.appName)", pids: snapshotPIDs)
+
+        let mainResult = AXUIElementSetAttributeValue(remembered.window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        DebugLog.write("focusAndRaise set main result=\(mainResult) frontmost=\(frontmostSummary()) \(debugSummary(remembered))")
+        snapshotWindowOrder(label: "after set main \(remembered.appName)", pids: snapshotPIDs)
+
+        let focusedResult = AXUIElementSetAttributeValue(remembered.window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        DebugLog.write("focusAndRaise set focused result=\(focusedResult) frontmost=\(frontmostSummary()) \(debugSummary(remembered))")
+        snapshotWindowOrder(label: "after set focused \(remembered.appName)", pids: snapshotPIDs)
+
+        let raiseResult = AXUIElementPerformAction(remembered.window, kAXRaiseAction as CFString)
+        DebugLog.write("focusAndRaise raise result=\(raiseResult) frontmost=\(frontmostSummary()) \(debugSummary(remembered))")
+        snapshotWindowOrder(label: "after target raise \(remembered.appName)", pids: snapshotPIDs)
+
+        let app = NSRunningApplication(processIdentifier: remembered.pid)
+        let didActivate = app?.activate(options: [.activateIgnoringOtherApps]) ?? false
+        DebugLog.write("focusAndRaise activate result=\(didActivate) frontmost=\(frontmostSummary()) \(debugSummary(remembered))")
+        snapshotWindowOrder(label: "after activate \(remembered.appName)", pids: snapshotPIDs)
     }
 
     static func raiseWithoutFocusing(_ remembered: RememberedWindow) {
-        AXUIElementPerformAction(remembered.window, kAXRaiseAction as CFString)
+        DebugLog.write("raiseWithoutFocusing begin \(debugSummary(remembered))")
+        let raiseResult = AXUIElementPerformAction(remembered.window, kAXRaiseAction as CFString)
+        DebugLog.write("raiseWithoutFocusing result=\(raiseResult) \(debugSummary(remembered))")
     }
 
     static func isSameWindow(_ lhs: RememberedWindow, _ rhs: RememberedWindow) -> Bool {
         CFEqual(lhs.window, rhs.window)
+    }
+
+    static func debugSummary(_ remembered: RememberedWindow) -> String {
+        let title = stringAttribute(remembered.window, kAXTitleAttribute) ?? "untitled"
+        let role = stringAttribute(remembered.window, kAXRoleAttribute) ?? "unknown-role"
+        let subrole = stringAttribute(remembered.window, kAXSubroleAttribute) ?? "unknown-subrole"
+        let windowNumber = intAttribute(remembered.window, "AXWindowNumber").map(String.init) ?? "unknown-window-number"
+        let frameDescription = frame(of: remembered.window).map(rectDescription) ?? "unknown-frame"
+
+        return "app='\(remembered.appName)' pid=\(remembered.pid) axHash=\(CFHash(remembered.window)) axWindowNumber=\(windowNumber) role=\(role) subrole=\(subrole) frame=\(frameDescription) title='\(title)'"
+    }
+
+    static func frontmostSummary() -> String {
+        guard let app = NSWorkspace.shared.frontmostApplication else {
+            return "unknown"
+        }
+
+        let name = app.localizedName ?? app.bundleIdentifier ?? "unknown"
+        return "\(name)(pid=\(app.processIdentifier))"
+    }
+
+    private static func snapshotWindowOrder(label: String, pids: Set<pid_t>) {
+        guard !pids.isEmpty else { return }
+        DebugLog.snapshotWindowOrder(label: label, pids: pids)
     }
 
     private static func stringAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
@@ -127,6 +168,14 @@ enum AXWindowInspector {
             return nil
         }
         return value as? Bool
+    }
+
+    private static func intAttribute(_ element: AXUIElement, _ attribute: String) -> Int? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+            return nil
+        }
+        return value as? Int ?? (value as? NSNumber)?.intValue
     }
 
     private static func cgPointAttribute(_ element: AXUIElement, _ attribute: String) -> CGPoint? {
@@ -182,6 +231,10 @@ enum AXWindowInspector {
 
             return cgFrame.intersection(frame).area > 100
         }
+    }
+
+    private static func rectDescription(_ rect: CGRect) -> String {
+        "x=\(Int(rect.origin.x)),y=\(Int(rect.origin.y)),w=\(Int(rect.width)),h=\(Int(rect.height))"
     }
 }
 

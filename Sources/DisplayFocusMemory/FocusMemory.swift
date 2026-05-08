@@ -173,8 +173,13 @@ final class FocusMemory {
             return
         }
 
+        let previous = rememberedWindowByDisplay[display.id]
+        let memoryChanged = previous.map { !AXWindowInspector.isSameWindow($0, remembered) || $0.pid != remembered.pid } ?? true
         removeDuplicateMemory(for: remembered)
         rememberedWindowByDisplay[display.id] = remembered
+        if memoryChanged {
+            DebugLog.write("remember display=\(display.id) frontmost=\(AXWindowInspector.frontmostSummary()) \(AXWindowInspector.debugSummary(remembered)) memory=\(debugMemorySummary())")
+        }
         status("Remembered \(remembered.appName) for display \(display.id)")
     }
 
@@ -200,9 +205,12 @@ final class FocusMemory {
             return
         }
 
+        let previousMouseDisplayID = currentMouseDisplayID
         currentMouseDisplayID = display.id
+        DebugLog.write("mouse crossed from=\(String(describing: previousMouseDisplayID)) to=\(display.id) frontmost=\(AXWindowInspector.frontmostSummary())")
 
         guard Date() >= suppressRestoreUntil else {
+            DebugLog.write("restore suppressed until \(suppressRestoreUntil)")
             return
         }
 
@@ -225,6 +233,7 @@ final class FocusMemory {
         focusTimer?.invalidate()
 
         let delay = TimeInterval(settings.restoreDelayMilliseconds) / 1000
+        DebugLog.write("scheduleRestore display=\(display.id) delay=\(settings.restoreDelayMilliseconds)ms")
         focusTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             self?.restoreIfStillOnDisplay(display)
         }
@@ -249,22 +258,45 @@ final class FocusMemory {
         }
 
         guard AXWindowInspector.isRestorable(remembered, ignoredAppNames: settings.ignoredAppNames) else {
+            DebugLog.write("restore skipped target not restorable display=\(display.id) \(AXWindowInspector.debugSummary(remembered))")
             return
         }
 
-        AXWindowInspector.focusAndRaise(remembered)
-        raiseRememberedWindowsOnOtherDisplays(except: display.id)
+        let pids = debugRememberedPIDs(including: remembered)
+        DebugLog.write("restore begin display=\(display.id) target=\(AXWindowInspector.debugSummary(remembered)) memory=\(debugMemorySummary())")
+        DebugLog.snapshotWindowOrder(label: "before focusAndRaise display=\(display.id)", pids: pids)
+        AXWindowInspector.focusAndRaise(remembered, snapshotPIDs: pids)
+        DebugLog.snapshotWindowOrder(label: "after focusAndRaise display=\(display.id)", pids: pids)
+        raiseRememberedWindowsOnOtherDisplays(except: display.id, restoredWindow: remembered)
+        DebugLog.snapshotWindowOrder(label: "after other-display repair display=\(display.id)", pids: pids)
+        scheduleDelayedWindowOrderSnapshots(displayID: display.id, pids: pids)
         status("Restored \(remembered.appName) on display \(display.id)")
     }
 
-    private func raiseRememberedWindowsOnOtherDisplays(except displayID: CGDirectDisplayID) {
+    private func raiseRememberedWindowsOnOtherDisplays(except displayID: CGDirectDisplayID, restoredWindow: RememberedWindow) {
         for (otherDisplayID, remembered) in rememberedWindowByDisplay where otherDisplayID != displayID {
-            guard AXWindowInspector.isRestorable(remembered, ignoredAppNames: settings.ignoredAppNames),
-                  let frame = AXWindowInspector.frame(of: remembered.window),
-                  DisplayResolver.displayWithLargestOverlap(for: frame)?.id == otherDisplayID else {
+            guard remembered.pid != restoredWindow.pid else {
+                DebugLog.write("other-display skip same-pid display=\(otherDisplayID) restoredPID=\(restoredWindow.pid) \(AXWindowInspector.debugSummary(remembered))")
                 continue
             }
 
+            guard AXWindowInspector.isRestorable(remembered, ignoredAppNames: settings.ignoredAppNames) else {
+                DebugLog.write("other-display skip not-restorable display=\(otherDisplayID) \(AXWindowInspector.debugSummary(remembered))")
+                continue
+            }
+
+            guard let frame = AXWindowInspector.frame(of: remembered.window) else {
+                DebugLog.write("other-display skip missing-frame display=\(otherDisplayID) \(AXWindowInspector.debugSummary(remembered))")
+                continue
+            }
+
+            let resolvedDisplayID = DisplayResolver.displayWithLargestOverlap(for: frame)?.id
+            guard resolvedDisplayID == otherDisplayID else {
+                DebugLog.write("other-display skip display-mismatch expected=\(otherDisplayID) resolved=\(String(describing: resolvedDisplayID)) \(AXWindowInspector.debugSummary(remembered))")
+                continue
+            }
+
+            DebugLog.write("other-display raise display=\(otherDisplayID) \(AXWindowInspector.debugSummary(remembered))")
             AXWindowInspector.raiseWithoutFocusing(remembered)
         }
     }
@@ -275,7 +307,35 @@ final class FocusMemory {
         }
     }
 
-    fileprivate func focusedWindowChanged() {
+    private func debugRememberedPIDs(including remembered: RememberedWindow? = nil) -> Set<pid_t> {
+        var pids = Set(rememberedWindowByDisplay.values.map(\.pid))
+        if let remembered {
+            pids.insert(remembered.pid)
+        }
+        return pids
+    }
+
+    private func debugMemorySummary() -> String {
+        rememberedWindowByDisplay
+            .sorted { $0.key < $1.key }
+            .map { displayID, remembered in
+                "display=\(displayID):\(AXWindowInspector.debugSummary(remembered))"
+            }
+            .joined(separator: " || ")
+    }
+
+    private func scheduleDelayedWindowOrderSnapshots(displayID: CGDirectDisplayID, pids: Set<pid_t>) {
+        guard DebugLog.isEnabled else { return }
+
+        for delay in [0.05, 0.20, 0.50, 1.0, 2.0, 4.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                DebugLog.snapshotWindowOrder(label: "delayed +\(Int(delay * 1000))ms display=\(displayID)", pids: pids)
+            }
+        }
+    }
+
+    fileprivate func focusedWindowChanged(notification: String) {
+        DebugLog.write("AX notification=\(notification) frontmost=\(AXWindowInspector.frontmostSummary())")
         rememberCurrentFocusedWindow()
     }
 
@@ -291,8 +351,9 @@ private let focusObserverCallback: AXObserverCallback = { _, _, notification, co
 
     if notification as String == kAXFocusedWindowChangedNotification as String ||
         notification as String == kAXMainWindowChangedNotification as String {
+        let notificationName = notification as String
         DispatchQueue.main.async {
-            memory.focusedWindowChanged()
+            memory.focusedWindowChanged(notification: notificationName)
         }
     }
 }
