@@ -96,12 +96,7 @@ enum AXWindowInspector {
     }
 
     static func shouldSkipAutomaticRestore(_ remembered: RememberedWindow) -> Bool {
-        guard let runningApp = NSRunningApplication(processIdentifier: remembered.pid),
-              runningApp.bundleIdentifier == "com.apple.Safari" else {
-            return false
-        }
-
-        return hasFullscreenVideoWindow(onSameDisplayAs: remembered)
+        hasFullscreenAuxiliaryWindow(onSameDisplayAs: remembered)
     }
 
     static func focusAndRaise(_ remembered: RememberedWindow, snapshotPIDs: Set<pid_t> = []) {
@@ -187,7 +182,7 @@ enum AXWindowInspector {
         return value as? Int ?? (value as? NSNumber)?.intValue
     }
 
-    private static func hasFullscreenVideoWindow(onSameDisplayAs remembered: RememberedWindow) -> Bool {
+    private static func hasFullscreenAuxiliaryWindow(onSameDisplayAs remembered: RememberedWindow) -> Bool {
         guard let targetFrame = frame(of: remembered.window),
               let targetDisplayID = DisplayResolver.displayWithLargestOverlap(for: targetFrame)?.id else {
             return false
@@ -203,7 +198,8 @@ enum AXWindowInspector {
 
         return windows.contains { window in
             guard boolAttribute(window, "AXFullScreen") == true,
-                  stringAttribute(window, kAXSubroleAttribute) == kAXDialogSubrole as String,
+                  stringAttribute(window, kAXRoleAttribute) == kAXWindowRole as String,
+                  stringAttribute(window, kAXSubroleAttribute) != kAXStandardWindowSubrole as String,
                   let fullscreenFrame = frame(of: window),
                   let fullscreenDisplayID = DisplayResolver.displayWithLargestOverlap(for: fullscreenFrame)?.id else {
                 return false

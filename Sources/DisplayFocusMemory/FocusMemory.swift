@@ -263,8 +263,8 @@ final class FocusMemory {
         }
 
         guard !AXWindowInspector.shouldSkipAutomaticRestore(remembered) else {
-            DebugLog.write("restore skipped Safari fullscreen video active display=\(display.id) \(AXWindowInspector.debugSummary(remembered))")
-            status("Skipped Safari restore while fullscreen video is active")
+            DebugLog.write("restore skipped fullscreen auxiliary window active display=\(display.id) \(AXWindowInspector.debugSummary(remembered))")
+            status("Skipped restore while fullscreen auxiliary window is active")
             return
         }
 
