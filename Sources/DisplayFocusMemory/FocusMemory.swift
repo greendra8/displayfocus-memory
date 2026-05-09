@@ -262,6 +262,12 @@ final class FocusMemory {
             return
         }
 
+        guard !AXWindowInspector.shouldSkipAutomaticRestore(remembered) else {
+            DebugLog.write("restore skipped Safari fullscreen video active display=\(display.id) \(AXWindowInspector.debugSummary(remembered))")
+            status("Skipped Safari restore while fullscreen video is active")
+            return
+        }
+
         let pids = debugRememberedPIDs(including: remembered)
         DebugLog.write("restore begin display=\(display.id) target=\(AXWindowInspector.debugSummary(remembered)) memory=\(debugMemorySummary())")
         DebugLog.snapshotWindowOrder(label: "before focusAndRaise display=\(display.id)", pids: pids)

@@ -95,6 +95,15 @@ enum AXWindowInspector {
         return true
     }
 
+    static func shouldSkipAutomaticRestore(_ remembered: RememberedWindow) -> Bool {
+        guard let runningApp = NSRunningApplication(processIdentifier: remembered.pid),
+              runningApp.bundleIdentifier == "com.apple.Safari" else {
+            return false
+        }
+
+        return hasFullscreenVideoWindow(onSameDisplayAs: remembered)
+    }
+
     static func focusAndRaise(_ remembered: RememberedWindow, snapshotPIDs: Set<pid_t> = []) {
         DebugLog.write("focusAndRaise begin frontmost=\(frontmostSummary()) \(debugSummary(remembered))")
 
@@ -176,6 +185,32 @@ enum AXWindowInspector {
             return nil
         }
         return value as? Int ?? (value as? NSNumber)?.intValue
+    }
+
+    private static func hasFullscreenVideoWindow(onSameDisplayAs remembered: RememberedWindow) -> Bool {
+        guard let targetFrame = frame(of: remembered.window),
+              let targetDisplayID = DisplayResolver.displayWithLargestOverlap(for: targetFrame)?.id else {
+            return false
+        }
+
+        let appElement = AXUIElementCreateApplication(remembered.pid)
+        var windowsValue: AnyObject?
+
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+              let windows = windowsValue as? [AXUIElement] else {
+            return false
+        }
+
+        return windows.contains { window in
+            guard boolAttribute(window, "AXFullScreen") == true,
+                  stringAttribute(window, kAXSubroleAttribute) == kAXDialogSubrole as String,
+                  let fullscreenFrame = frame(of: window),
+                  let fullscreenDisplayID = DisplayResolver.displayWithLargestOverlap(for: fullscreenFrame)?.id else {
+                return false
+            }
+
+            return fullscreenDisplayID == targetDisplayID
+        }
     }
 
     private static func cgPointAttribute(_ element: AXUIElement, _ attribute: String) -> CGPoint? {
