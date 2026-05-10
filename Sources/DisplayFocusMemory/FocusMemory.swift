@@ -27,7 +27,7 @@ final class FocusMemory {
             return
         }
 
-        guard AccessibilityPermission.request(prompt: true) else {
+        guard AccessibilityPermission.isTrusted() || AccessibilityPermission.request(prompt: true) else {
             status("Accessibility permission is required")
             installMouseMonitorIfNeeded()
             installPermissionPolling()

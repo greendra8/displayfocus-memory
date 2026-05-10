@@ -52,7 +52,7 @@ xcrun stapler staple build/DisplayFocusMemory.app
 
 ## Permissions
 
-The app asks for Accessibility permission on first launch. Without it, DisplayFocus Memory stays idle and reports that permission is required from the menu-bar tooltip.
+The app asks for Accessibility permission when it starts without permission. If needed, use `Request Accessibility Permission` in the menu to open the macOS permission flow again.
 
 ## Settings
 
