@@ -33,13 +33,30 @@ swift build
 
 ## Release Build
 
-For local testing, `make app` creates an ad-hoc signed app. For public distribution, sign with Developer ID:
+For local testing, `make app` creates an ad-hoc signed app. Do not upload that app for users.
+
+For public distribution, use `scripts/build-release.sh`. It signs the app with Developer ID, submits it for notarization, staples the notarization ticket, then creates the final GitHub release zip at `build/DisplayFocusMemory.zip`.
+
+See `RELEASE.md` for the full release checklist.
+
+Create a notarization keychain profile once:
 
 ```sh
-SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" scripts/build-release.sh
-xcrun notarytool submit build/DisplayFocusMemory.zip --keychain-profile displayfocus-notary --wait
-xcrun stapler staple build/DisplayFocusMemory.app
+xcrun notarytool store-credentials displayfocus-notary \
+  --apple-id "you@example.com" \
+  --team-id "TEAMID" \
+  --password "app-specific-password"
 ```
+
+Then build the release:
+
+```sh
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+  NOTARY_PROFILE="displayfocus-notary" \
+  scripts/build-release.sh
+```
+
+Upload `build/DisplayFocusMemory.zip` to GitHub Releases.
 
 ## Behavior
 
