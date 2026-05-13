@@ -21,13 +21,13 @@ final class FocusMemory {
         self.status = status
     }
 
-    func start() {
+    func start(promptForPermission: Bool = false) {
         guard settings.isEnabled else {
             status("DisplayFocus Memory is disabled")
             return
         }
 
-        guard AccessibilityPermission.isTrusted() || AccessibilityPermission.request(prompt: true) else {
+        guard AccessibilityPermission.isTrusted() || AccessibilityPermission.request(prompt: promptForPermission) else {
             status("Accessibility permission is required")
             installMouseMonitorIfNeeded()
             installPermissionPolling()

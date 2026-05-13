@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureStatusItem()
         rebuildMenu()
-        focusMemory.start()
+        focusMemory.start(promptForPermission: !settings.startAtLoginRequested)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -114,7 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleEnabled() {
         settings.isEnabled.toggle()
         settings.save()
-        settings.isEnabled ? focusMemory.start() : focusMemory.pause()
+        settings.isEnabled ? focusMemory.start(promptForPermission: true) : focusMemory.pause()
         rebuildMenu()
     }
 

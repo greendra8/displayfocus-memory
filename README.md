@@ -69,7 +69,7 @@ Upload `build/DisplayFocusMemory.zip` to GitHub Releases.
 
 ## Permissions
 
-The app asks for Accessibility permission when it starts without permission. If needed, use `Request Accessibility Permission` in the menu to open the macOS permission flow again.
+The app asks for Accessibility permission on first manual launch when permission is missing. When it starts automatically at login, it checks permission silently so macOS does not show the Accessibility prompt on every boot. If needed, use `Request Accessibility Permission` in the menu to open the macOS permission flow again.
 
 ## Settings
 

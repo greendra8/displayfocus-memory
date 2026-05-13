@@ -26,7 +26,7 @@ xcrun notarytool store-credentials displayfocus-notary \
 3. Tag the commit, for example:
 
 ```sh
-git tag v0.1.5
+git tag v0.1.6
 git push origin main --tags
 ```
 
